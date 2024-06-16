@@ -1,3 +1,4 @@
+import os
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
@@ -8,12 +9,31 @@ import pandas as pd
 import editacodigo_whats
 import time
 
+# Caminho absoluto para o arquivo CSV
+csv_path = os.path.abspath('contatos_atendidos.csv')
+
+# Função para carregar contatos atendidos
+def carregar_contatos_atendidos(csv_path):
+    if os.path.exists(csv_path):
+        try:
+            df = pd.read_csv(csv_path, index_col=0)
+            if 'nome_contato' not in df.columns:
+                print("Coluna 'nome_contato' não encontrada no CSV. Inicializando DataFrame vazio.")
+                df = pd.DataFrame(columns=['nome_contato'])
+        except pd.errors.EmptyDataError:
+            print("Arquivo CSV está vazio. Inicializando DataFrame vazio.")
+            df = pd.DataFrame(columns=['nome_contato'])
+    else:
+        print("Arquivo CSV não encontrado. Inicializando DataFrame vazio.")
+        df = pd.DataFrame(columns=['nome_contato'])
+    return df
+
+# Carregar contatos atendidos
+contatos_atendidos = carregar_contatos_atendidos(csv_path)
+
 # Carregar navegador
 driver = editacodigo_whats.carregar_pagina_whatsapp('zap/sessao', 'https://web.whatsapp.com/')
 time.sleep(8)  # Aguardar o carregamento inicial
-
-# DataFrame para armazenar contatos atendidos
-contatos_atendidos = pd.read_csv('contatos_atendidos.csv', index_col=0)
 
 # Função para verificar se o contato já foi atendido
 def contato_atendido(nome_contato):
@@ -24,7 +44,34 @@ def adicionar_contato_atendido(nome_contato):
     global contatos_atendidos
     novo_contato = pd.DataFrame({'nome_contato': [nome_contato]})
     contatos_atendidos = pd.concat([contatos_atendidos, novo_contato], ignore_index=True)
-    contatos_atendidos.to_csv('contatos_atendidos.csv', index=False)
+    try:
+        contatos_atendidos.to_csv(csv_path, index=False)
+    except PermissionError as e:
+        print(f"Erro de permissão ao salvar o arquivo: {e}")
+
+# Saindo do filtro
+def saindo_filtro():
+    try:
+        driver.find_element(By.XPATH, '//*[@id="side"]/div[1]/div/button/div/span').click()
+    except Exception as e:
+        print(f'Erro ao sair do filtro: {e}')
+
+# Entrar no filtro não lido
+def nao_lidas():
+    try:
+        driver.find_element(By.XPATH, '//*[@id="side"]/div[1]/div/button/div/span').click()
+        driver.find_element(By.XPATH, '//*[@id="app"]/div/span[5]/div/ul/div/li[1]/div/div[2]').click()
+    except Exception as e:
+        print(f'Erro ao acessar mensagens não lidas: {e}')
+
+# Função limpar chat
+def clean_chat():
+    try:
+        driver.find_element(By.XPATH, '//*[@id="main"]/header/div[3]/div/div[2]/div/div/span').click()
+        driver.find_element(By.XPATH, '//*[@id="app"]/div/span[5]/div/ul/div/div/li[6]/div').click()
+        driver.find_element(By.XPATH, '//*[@id="app"]/div/span[2]/div/div/div/div/div/div/div[3]/div/button[2]/div/div').click()
+    except Exception as e:
+        print(f'Erro ao limpar chat: {e}')    
 
 # Enviar Mensagem
 def enviar_mensagem(message):
@@ -51,6 +98,8 @@ while True:
         # Esperar a notificação aparecer
         WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="pane-side"]/div/div/div/div[1]/div/div/div/div[2]/div[2]/div[2]/span[1]/div/span')))
 
+        nao_lidas()
+        time.sleep(2)
         # Obter todas as notificações
         for i in range(1, 51):
             xpath = f'//*[@id="pane-side"]/div/div/div/div[{i}]/div/div/div/div[2]/div[2]/div[2]/span[1]/div/span'
@@ -151,6 +200,7 @@ while True:
                     driver.find_element(By.XPATH, '//body').send_keys(Keys.ESCAPE)
                     time.sleep(1)
 
+
                 except StaleElementReferenceException:
                     print("Stale element reference ao interagir com a notificação")
                     continue
@@ -164,11 +214,11 @@ while True:
     except TimeoutException:
         print("Timeout esperando por notificações")
         time.sleep(5)
-        continue
-
-    except Exception as e:
-        time.sleep(5)
-        print("Aguardando mensagens...")
-        print(f"Erro: {e}")
+        try:
+            saindo_filtro()
+            time.sleep(30)
+            nao_lidas()
+        except Exception as e:
+            print(f'Não chegou notificações: {e}')
         continue
 
